@@ -1,0 +1,2 @@
+model_checkpoint_path: "cell5"
+all_model_checkpoint_paths: "cell5"
