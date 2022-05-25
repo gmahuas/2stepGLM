@@ -63,8 +63,6 @@ def compute_correlations(spikes, bin_size, max_spikes, max_corr_time=10):
     n_bins_psth = np.floor(nt/bin_size)
     tronc = nt%bin_size
     
-    # In order to have n_bins_psth pair (so that we can easily get the center
-    # bin corresponding to the zero time lag noise covariance
     if n_bins_psth%2 == 1:
         n_bins_psth += -1
         tronc += bin_size
@@ -82,41 +80,24 @@ def compute_correlations(spikes, bin_size, max_spikes, max_corr_time=10):
     # Covariances
     # Firing rates
     lbd = np.mean(n_spikes, 2)
-    # Mean spike count across time and repeats
-    mean_lbd = np.mean(lbd, 1)
+
+    # Covariances
+    cov_stim = np.cov(lbd, ddof=0)
+    cov_tot = np.cov(np.reshape(n_spikes, (n_cells, n_bins_psth*n_rep), order='F'), ddof=0)
+    cov_noise = cov_tot - cov_stim
     
-    # Stimulus covariance
-    z_lbd = lbd - np.transpose(np.tile(mean_lbd, (n_bins_psth,1)))
-    cov_stim = np.zeros((n_cells, n_cells, 2*max_corr_time+1))
-    for tau in np.arange(-max_corr_time,max_corr_time+1):
-        cov_stim[:,:,max_corr_time+tau] = np.matmul(z_lbd,np.transpose(np.roll(z_lbd, tau, axis=1)))/n_bins_psth
-        
-    # Total covariance
-    z_n_spikes = n_spikes - np.transpose(np.tile(mean_lbd, (n_rep, n_bins_psth, 1)))
-    cov_tot = np.zeros((n_cells, n_cells, 2*max_corr_time+1))
-    cov_tot_temp = np.zeros((n_cells, n_cells, n_rep))
-    for tau in np.arange(-max_corr_time, max_corr_time+1):
-        for rep in np.arange(n_rep):
-            cov_tot_temp[:,:,rep] = np.matmul(z_n_spikes[:,:,rep], np.transpose(np.roll(z_n_spikes[:,:,rep], tau, axis=1)))/n_bins_psth
-        cov_tot[:,:,max_corr_time+tau] = np.mean(cov_tot_temp, 2)
-        
-    # Noise covariance
-    l_n = n_spikes - lbd[:,:,np.newaxis]
-    cov_noise = np.zeros((n_cells, n_cells, 2*max_corr_time+1))
-    l_n_l_n = np.zeros((n_cells, n_cells, n_rep))
-    
-    for tau in np.arange(-max_corr_time, max_corr_time+1):
-        l_n_shift = np.roll(l_n, tau, 1)
-        for rep in range(n_rep):
-            l_n_l_n[:,:,rep] = np.matmul(l_n[:,:,rep], np.transpose(l_n_shift[:,:,rep]))/n_bins_psth
-        cov_noise[:,:,max_corr_time+tau] = np.mean(l_n_l_n,2)
+    var_tot = np.diag(cov_tot)
     
     # Correlations
+    corr_noise_array = (var_tot**(-0.5)*np.eye(n_cells))@cov_noise@(var_tot**(-0.5)*np.eye(n_cells))
+    corr_stim_array = (var_tot**(-0.5)*np.eye(n_cells))@cov_stim@(var_tot**(-0.5)*np.eye(n_cells))
+    
+    # Correlations list
     corr_noise = []
     corr_stim = []
     for i_cell in range(n_cells-1):
         for j_cell in np.arange(i_cell+1,n_cells):
-            corr_noise += [cov_noise[i_cell,j_cell,max_corr_time]/np.sqrt(cov_tot[i_cell,i_cell,max_corr_time]*cov_tot[j_cell,j_cell,max_corr_time])]
-            corr_stim += [cov_stim[i_cell,j_cell,max_corr_time]/np.sqrt(cov_tot[i_cell,i_cell,max_corr_time]*cov_tot[j_cell,j_cell,max_corr_time])]
-           
+            corr_noise += [corr_noise_array[i_cell,j_cell]]
+            corr_stim += [corr_stim_array[i_cell,j_cell]]
+
     return corr_noise, corr_stim
